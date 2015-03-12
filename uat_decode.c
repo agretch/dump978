@@ -794,6 +794,30 @@ static const char *get_fisb_product_format(uint16_t product_id)
     }
 }
 
+static const char *get_apdu_product_format(uint16_t format_id)
+{
+    switch (format_id) {
+    case 0:
+        return "No data";
+    case 1:
+        return "Unformatted ASCII Text";
+    case 2:
+        return "Unformatted DLAC Text";
+    case 3:
+        return "Unformatted DLAC Text w/dictionary";
+    case 4:
+        return "Formatted Text using ASN.1/PER";
+    case 5: case 6: case 7:
+        return "Future Use";
+    case 8:
+        return "Graphical Overlay";
+    case 9: case 10: case 11: case 12: case 13: case 14: case 15:
+        return "Future Use";
+    default:
+        return "unknown";
+    }
+}
+
 static void uat_display_fisb_frame(const struct fisb_apdu *apdu, FILE *to)
 {
     fprintf(to, 
@@ -818,6 +842,52 @@ static void uat_display_fisb_frame(const struct fisb_apdu *apdu, FILE *to)
     fprintf(to, "\n");
 
     switch (apdu->product_id) {
+    case 8: case 9: case 10: case 11: case 12: case 13:
+        {
+        	  int format = (apdu->data[0]>>4) & 0x0F;
+        	  int version = (apdu->data[0] & 0x0F);
+        	  int count = (apdu->data[1] & 0xF0)>>4;
+        	  int spare = (apdu->data[1] & 0x0F);
+        	  char report_buf[1024];
+              const char *text= decode_dlac(apdu->data+2, 3);
+              const char *text1;
+			  if (apdu->data[2])
+			  {
+                  memcpy(report_buf, text, 4);
+			  }
+			  else
+			  {
+                  memcpy(report_buf, "    ", 4);
+			  }
+              report_buf[4] = 0;
+
+              //Need work on decoding rec_ref (First 6 bit RW heading and last 2 bit NA,R,L or C). For now assume 0 (use Location Identifier field) or 255 (other source)
+              int rec_ref = (apdu->data[5] & 0xFF);
+            // Generic text, DLAC
+        	  fprintf(to,"Aerodrome/space - format: %d - %s, version: %d, count: %d, spare: %d, location: %s, reference %d",format, get_apdu_product_format(format), version, count, spare, report_buf, rec_ref);
+        	  fprintf(to, "\n");
+
+        	  //DLAC text with header
+        	  if ( format == 2)
+        	  {
+        	      int length = (apdu->data[6]<<8) + apdu->data[7];
+        	      int num = (apdu->data[8]<<6) + (apdu->data[9]>>2);
+        	      fprintf(to,"num: %d\n", num);
+        	      text1=decode_dlac(apdu->data+11, length-6);
+            	  fprintf(to,"%s\n",text1);
+        	  }
+        	  //Graphical overlay
+        	  else if (format == 8)
+        	    {
+        	      int length = (apdu->data[6]<<2) + (apdu->data[7]>>6);
+        	      int num = ((apdu->data[7] & 0x3F)<<8) + (apdu->data[8]);
+        	      int year = (apdu->data[9]>>1);
+        	      //seems broken
+        	      int record_id = ((apdu->data[9] & 0x01)<<3) + ((apdu->data[10] & 0xE0)>>5);
+        	      fprintf(to, "Graphical overlay length: %d, num: %d, yr: %d, rec_id: %d \n", length, num, year, record_id);
+        	    }
+       }
+        break;
     case 413:
         {
             // Generic text, DLAC
