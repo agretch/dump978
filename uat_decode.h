@@ -147,11 +147,17 @@ struct fisb_apdu {
     int seconds_valid : 1;
 
     uint16_t product_id;
+    uint8_t t_opt;
     uint8_t month;   // if monthday_valid
     uint8_t day;     // if monthday_valid
     uint8_t hours;
     uint8_t minutes;
     uint8_t seconds; // if seconds_valid
+
+    //Segmentation block
+    uint16_t product_file_id;
+    uint16_t product_file_length;
+    uint16_t apdu_number;
 
     uint16_t length;
     uint8_t *data;
