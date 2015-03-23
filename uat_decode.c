@@ -904,7 +904,35 @@ static void uat_display_fisb_frame(const struct fisb_apdu *apdu, FILE *to)
         	      // int length = (apdu->data[6]<<8) + apdu->data[7];
         	      int num = (apdu->data[8]<<6) + (apdu->data[9]>>2);
         	      fprintf(to,"num: %d\n", num);
-        	      text1=decode_dlac(apdu->data+11, apdu->length-6);
+        	      if (apdu->s_flag)
+        	      {
+        	    	  if (apdu->apdu_number > 1)
+        	    	  {
+        	    		  if ( (((apdu->apdu_number)-1) % 3) == 0)
+        	    		  {
+        	    			  text1=decode_dlac(apdu->data+5, apdu->length-5); //Segments 4,7,10 etc
+        	    		  }
+        	    		  else
+        	    		  {
+            	    		  if ( ((apdu->apdu_number) % 3) == 0)
+            	    		  {
+            	    			  text1=decode_dlac(apdu->data+4, apdu->length-4); //Segments 3,6,9,12 etc
+            	    		  }
+            	    		  else
+            	    		  {
+            	    			  text1=decode_dlac(apdu->data+6, apdu->length-6); //Segments 2,5,8,11 etc
+            	    		  }
+        	    		  }
+        	    	  }
+        	    	  else
+        	    	  {
+        	    		  text1=decode_dlac(apdu->data+11, apdu->length-10); //Segment 1
+        	    	  }
+        	      }
+        	      else
+        	      {
+        	    	  text1=decode_dlac(apdu->data+11, apdu->length-10);
+        	      }
             	  fprintf(to,"%s\n",text1);
         	  }
         	  //Graphical overlay
