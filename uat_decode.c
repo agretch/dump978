@@ -550,8 +550,10 @@ static void uat_decode_info_frame(struct uat_uplink_info_frame *frame)
         frame->fisb.minutes = ((frame->data[3] & 0x01) << 5) | (frame->data[4] >> 3);
         if(frame->fisb.s_flag)
         {
-        	frame->fisb.product_file_id=((frame->data[5] & 0xff)<<2) | (frame->data[6] >> 6);
-        	frame->fisb.product_file_length=((frame->data[6] & 0x3f) << 3) | (frame->data[7] >> 5);
+        	//frame->fisb.product_file_id=((frame->data[5] & 0xff)<<2) | (frame->data[6] >> 6);
+        	frame->fisb.product_file_id=((frame->data[4] & 0x07)<<7) | (frame->data[5] >> 1);
+        	//frame->fisb.product_file_length=((frame->data[6] & 0x3f) << 3) | (frame->data[7] >> 5);
+        	frame->fisb.product_file_length=((frame->data[5] & 0x01) << 1) | (frame->data[6]);
         	//frame->fisb.apdu_number=((frame->data[7] & 0x1f) << 4) | (frame->data[8] >> 4);
         	frame->fisb.apdu_number=((frame->data[7] & 0xff) << 1) | (frame->data[8] >> 7);
             frame->fisb.data = frame->data + 9;
