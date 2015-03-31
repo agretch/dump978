@@ -138,6 +138,17 @@ void uat_display_adsb_mdb(const struct uat_adsb_mdb *mdb, FILE *to);
 // (TIS-B heartbeat with one address, or empty FIS-B APDU)
 #define UPLINK_MAX_INFO_FRAMES (424/6)
 
+struct aa_hdr {
+
+	uint8_t format;
+	uint8_t version;
+	uint8_t count;
+	uint8_t spare;
+    char loc_id[5];
+    uint8_t rec_ref;
+
+};
+
 struct fisb_apdu {
     int a_flag : 1;
     int g_flag : 1;
@@ -155,12 +166,15 @@ struct fisb_apdu {
     uint8_t seconds; // if seconds_valid
 
     //Segmentation block
-    uint16_t product_file_id;
-    uint16_t product_file_length;
-    uint16_t apdu_number;
+    uint16_t product_file_id;     // Unique file ID
+    uint16_t product_file_length; // number of segments
+    uint16_t apdu_number;         // segment number
 
     uint16_t length;
     uint8_t *data;
+
+    // if Aerodrome/Airspace Product:
+    struct aa_hdr aahdr;
 };
 
 struct uat_uplink_info_frame {

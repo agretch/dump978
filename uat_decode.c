@@ -491,6 +491,89 @@ void uat_display_adsb_mdb(const struct uat_adsb_mdb *mdb, FILE *to)
     uat_display_auxsv(mdb, to);
 }
 
+// The odd two-string-literals here is to avoid \0x3ABCDEF being interpreted as a single (very large valued) character
+static const char *dlac_alphabet = "\x03" "ABCDEFGHIJKLMNOPQRSTUVWXYZ\x1A\t\x1E\n| !\"#$%&'()*+,-./0123456789:;<=>?";
+
+static const char *decode_dlac(uint8_t *data, unsigned bytelen)
+{
+    static char buf[1024];
+    uint8_t *end = data + bytelen;
+    char *p = buf;
+    int step = 0;
+    int tab = 0;
+
+    while (data < end) {
+        int ch;
+
+        assert(step >= 0 && step <= 3);
+        switch (step) {
+        case 0:
+            ch = data[0] >> 2;
+            ++data;
+            break;
+        case 1:
+            ch = ((data[-1] & 0x03) << 4) | (data[0] >> 4);
+            ++data;
+            break;
+        case 2:
+            ch = ((data[-1] & 0x0f) << 2) | (data[0] >> 6);
+            break;
+        case 3:
+            ch = data[0] & 0x3f;
+            ++data;
+            break;
+        }
+
+        if (tab) {
+            while (ch > 0)
+                *p++ = ' ', ch--;
+            tab = 0;
+        } else if (ch == 28) { // tab
+            tab = 1;
+        } else {
+            *p++ = dlac_alphabet[ch];
+        }
+
+        step = (step+1)%4;
+    }
+
+    *p = 0;
+    return buf;
+}
+
+static void uat_decode_info_frame_aahdr(struct uat_uplink_info_frame *frame)
+{
+    switch (frame->fisb.product_id) {
+    case 8: case 9: case 10: case 11: case 12: case 13:
+        	frame->fisb.aahdr.format = (frame->fisb.data[0]>>4) & 0x0F;
+        	frame->fisb.aahdr.version = (frame->fisb.data[0] & 0x0F);
+        	frame->fisb.aahdr.count = (frame->fisb.data[1] & 0xF0)>>4;
+        	frame->fisb.aahdr.spare = (frame->fisb.data[1] & 0x0F);
+            const char *text= decode_dlac(frame->fisb.data+2, 3);
+        	if (frame->fisb.data[2])
+        	{
+              memcpy(frame->fisb.aahdr.loc_id, text, 4);
+        	}
+        	else
+        	{
+              memcpy(frame->fisb.aahdr.loc_id, "    ", 4);
+        	}
+            frame->fisb.aahdr.loc_id[4] = 0;
+
+            //Need work on decoding rec_ref (First 6 bit RW heading and last 2 bit NA,R,L or C). For now assume 0 (use Location Identifier field) or 255 (other source)
+            frame->fisb.aahdr.rec_ref = (frame->fisb.data[5] & 0xFF);
+            break;
+    default:
+    	frame->fisb.aahdr.format = 0;
+    	frame->fisb.aahdr.version = 0;
+    	frame->fisb.aahdr.count = 0;
+    	frame->fisb.aahdr.spare = 0;
+        memcpy(frame->fisb.aahdr.loc_id, "    ", 4);
+        frame->fisb.aahdr.loc_id[4] = 0;
+        frame->fisb.aahdr.rec_ref = 0;
+    }
+}
+
 
 static void uat_decode_info_frame(struct uat_uplink_info_frame *frame)
 {
@@ -550,11 +633,8 @@ static void uat_decode_info_frame(struct uat_uplink_info_frame *frame)
         frame->fisb.minutes = ((frame->data[3] & 0x01) << 5) | (frame->data[4] >> 3);
         if(frame->fisb.s_flag)
         {
-        	//frame->fisb.product_file_id=((frame->data[5] & 0xff)<<2) | (frame->data[6] >> 6);
         	frame->fisb.product_file_id=((frame->data[4] & 0x07)<<7) | (frame->data[5] >> 1);
-        	//frame->fisb.product_file_length=((frame->data[6] & 0x3f) << 3) | (frame->data[7] >> 5);
         	frame->fisb.product_file_length=((frame->data[5] & 0x01) << 1) | (frame->data[6]);
-        	//frame->fisb.apdu_number=((frame->data[7] & 0x1f) << 4) | (frame->data[8] >> 4);
         	frame->fisb.apdu_number=((frame->data[7] & 0xff) << 1) | (frame->data[8] >> 7);
             frame->fisb.data = frame->data + 9;
             frame->fisb.length = frame->length - 9; // ???
@@ -588,6 +668,8 @@ static void uat_decode_info_frame(struct uat_uplink_info_frame *frame)
     frame->fisb.p_flag = (frame->data[0] & 0x20) ? 1 : 0;
     frame->fisb.product_id = ((frame->data[0] & 0x1f) << 6) | (frame->data[1] >> 2);
     frame->is_fisb = 1;
+
+    uat_decode_info_frame_aahdr(frame);
 }
 
 void uat_decode_uplink_mdb(uint8_t *frame, struct uat_uplink_mdb *mdb)
@@ -673,55 +755,6 @@ static void display_generic_data(uint8_t *data, uint16_t length, FILE *to)
     }
 }
 
-// The odd two-string-literals here is to avoid \0x3ABCDEF being interpreted as a single (very large valued) character
-static const char *dlac_alphabet = "\x03" "ABCDEFGHIJKLMNOPQRSTUVWXYZ\x1A\t\x1E\n| !\"#$%&'()*+,-./0123456789:;<=>?";
-
-static const char *decode_dlac(uint8_t *data, unsigned bytelen)
-{
-    static char buf[1024];
-    uint8_t *end = data + bytelen;
-    char *p = buf;
-    int step = 0;
-    int tab = 0;
-    
-    while (data < end) {
-        int ch;
-
-        assert(step >= 0 && step <= 3);
-        switch (step) {
-        case 0:
-            ch = data[0] >> 2;
-            ++data;
-            break;
-        case 1:
-            ch = ((data[-1] & 0x03) << 4) | (data[0] >> 4);
-            ++data;
-            break;
-        case 2:
-            ch = ((data[-1] & 0x0f) << 2) | (data[0] >> 6);
-            break;
-        case 3:
-            ch = data[0] & 0x3f;
-            ++data;
-            break;
-        }
-
-        if (tab) {
-            while (ch > 0)
-                *p++ = ' ', ch--;
-            tab = 0;
-        } else if (ch == 28) { // tab
-            tab = 1;
-        } else {
-            *p++ = dlac_alphabet[ch];
-        }
-
-        step = (step+1)%4;
-    }
-
-    *p = 0;
-    return buf;
-}
     
 static const char *get_fisb_product_name(uint16_t product_id)
 {
@@ -877,31 +910,12 @@ static void uat_display_fisb_frame(const struct fisb_apdu *apdu, FILE *to)
     switch (apdu->product_id) {
     case 8: case 9: case 10: case 11: case 12: case 13:
         {
-        	  int format = (apdu->data[0]>>4) & 0x0F;
-        	  int version = (apdu->data[0] & 0x0F);
-        	  int count = (apdu->data[1] & 0xF0)>>4;
-        	  int spare = (apdu->data[1] & 0x0F);
-        	  char report_buf[1024];
-              const char *text= decode_dlac(apdu->data+2, 3);
               const char *text1;
-			  if (apdu->data[2])
-			  {
-                  memcpy(report_buf, text, 4);
-			  }
-			  else
-			  {
-                  memcpy(report_buf, "    ", 4);
-			  }
-              report_buf[4] = 0;
-
-              //Need work on decoding rec_ref (First 6 bit RW heading and last 2 bit NA,R,L or C). For now assume 0 (use Location Identifier field) or 255 (other source)
-              int rec_ref = (apdu->data[5] & 0xFF);
-            // Generic text, DLAC
-        	  fprintf(to,"Aerodrome/space - format: %d - %s, version: %d, count: %d, spare: %d, location: %s, reference %d",format, get_apdu_product_format(format), version, count, spare, report_buf, rec_ref);
-        	  fprintf(to, "\n");
+              // Generic text, DLAC
+        	  fprintf(to,"Aerodrome/space - format: %d - %s, version: %d, count: %d, spare: %d, location: %s, reference %d\n",apdu->aahdr.format, get_apdu_product_format(apdu->aahdr.format), apdu->aahdr.version, apdu->aahdr.count, apdu->aahdr.spare, apdu->aahdr.loc_id, apdu->aahdr.rec_ref);
 
         	  //DLAC text with header
-        	  if ( format == 2)
+        	  if ( apdu->aahdr.format == 2)
         	  {
         	      // int length = (apdu->data[6]<<8) + apdu->data[7];
         	      int num = (apdu->data[8]<<6) + (apdu->data[9]>>2);
@@ -938,7 +952,7 @@ static void uat_display_fisb_frame(const struct fisb_apdu *apdu, FILE *to)
             	  fprintf(to,"%s\n",text1);
         	  }
         	  //Graphical overlay
-        	  else if (format == 8)
+        	  else if (apdu->aahdr.format == 8)
         	    {
         	      int length = (apdu->data[6]<<2) + (apdu->data[7]>>6);
         	      int num = ((apdu->data[7] & 0x3F)<<8) + (apdu->data[8]);
